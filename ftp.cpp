@@ -28,8 +28,33 @@ void ftpC::connect()
 {
     // open connection (internet)
     ftpIO = InternetOpenA("SystemConnection", INTERNET_OPEN_TYPE_DIRECT, m_host.c_str(), 0, INTERNET_FLAG_CACHE_IF_NET_FAIL);
+    if (ftpIO == NULL)
+    {
+        // error (descriptive)
+        DWORD error = GetLastError();
+        LPVOID lpMsgBuf;
+        FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&lpMsgBuf, 0, NULL);
+        std::string errorMessage = static_cast<char*>(lpMsgBuf);
+        LocalFree(lpMsgBuf);
+
+        // exception thrown
+        throw std::runtime_error("[!] failed to open connection: " + errorMessage);
+    }
     // connect to ftp server
     ftpS = InternetConnectA(ftpIO, m_host.c_str(), INTERNET_DEFAULT_FTP_PORT, m_username.c_str(), m_password.c_str(), INTERNET_SERVICE_FTP, INTERNET_FLAG_PASSIVE, 0);
+    if (ftpS == NULL)
+    {
+        // error (descriptive)
+        DWORD error = GetLastError();
+        LPVOID lpMsgBuf;
+        FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                      NULL, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR)&lpMsgBuf, 0, NULL);
+        std::string errorMessage = static_cast<char*>(lpMsgBuf);
+        LocalFree(lpMsgBuf);
+
+        // exception thrown
+        throw std::runtime_error("[!] failed to connect to ftp server: " + errorMessage);
+    }
 }
 
 // upload file from local -> ftp server
