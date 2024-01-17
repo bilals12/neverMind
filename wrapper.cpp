@@ -56,3 +56,168 @@ std::string wrapper::last_error_string()
 }
 
 // list directory contents
+std::vector<std::string> wrapper::listdir(const std::string& path)
+{
+    std::vector<std::string> directory_content;
+    for (const auto& val : std::filesystem::directory_iterator(path)) {
+        std::string content = val.path().u8string();
+        std::size_t last_idx = content.find_last_of("\\");
+        directory_content.push_back(content.substr(last_idx + 1));
+    }
+    return directory_content;
+}
+
+// generate random string
+std::string wrapper::random_string()
+{
+    std::string tmp_s;
+    static const char alphanum[] = 
+    "0123456789"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz";
+
+    srand((unsigned)time(NULL) * 38);
+    const int STRING_LENGTH = 20; // define constant
+    tmp_s.reserve(STRING_LENGTH);
+
+    for (int i = 0; i < STRING_LENGTH; i++)
+        tmp_s += alphanum[rand() & (sizeof(alphanum) - 1)];
+
+    return tmp_s;
+}
+
+// current date as string
+std::string wrapper::get_date()
+{
+    auto t = std::time(nullptr);
+    auto tm = *std::localtime(&t);
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%d-%m-%Y_%H-%M-%S");
+    return oss.str();
+}
+
+// bitmap header
+BITMAPINFOHEADER wrapper::createBitmapHeader(int width, int height)
+{
+    BITMAPINFOHEADER bi;
+    bi.biSize = sizeof(BITMAPINFOHEADER);
+    bi.biWidth = width;
+    bi.biHeight = height;
+    bi.biPlanes = 1;
+    bi.biBitCount = 32;
+    bi.biCompression = BI_RGB;
+    bi.biSizeImage = 0;
+    bi.biXPelsPerMeter = 0;
+    bi.biYPelsPerMeter = 0;
+    bi.biClrUsed = 0;
+    bi.biClrImportant = 0;
+
+    return bi;
+}
+
+// screen capture
+HBITMAP wrapper::GdiPlusScreenCapture(HWND hWnd)
+{
+    // handles to device context (DC)
+    HDC hwindowDC = GetDC(hWnd);
+    HDC hwindowCompatibleDC = CreateCompatibleDC(hwindowDC);
+    SetStretchBltMode(hwindowCompatibleDC, COLORONCOLOR);
+
+    // scale, height, width
+    int scale = 1;
+    int screenx = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    int screeny = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    int width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    int height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+    // create bitmap
+    HBITMAP hbwindow = CreateCompatibleBitmap(hwindowDC, width, height);
+    BITMAPINFOHEADER bi = wrapper::createBitmapHeader(width, height);
+
+    // previously created device context with bitmap
+    SelectObject(hwindowCompatibleDC, hbwindow);
+
+    // copy from window DC to bitmap DC
+    StretchBlt(hwindowCompatibleDC, 0, 0, width, height, hwindowDC, screenx, screeny, width, height, SRCCOPY);
+    GetDIBits(hwindowCompatibleDC, hbwindow, 0, height, lpbitmap, (BITMAPINFO*)&bi, DIB_RGB_COLORS);
+
+    // avoid memory leak
+    DeleteDC(hwindowCompatibleDC);
+    ReleaseDC(hWnd, hwindowDC);
+
+    return hbwindow;
+}
+
+// save bitmap to memory
+bool wrapper::saveToMemory(HBITMAP* hbitmap, std::vector<BYTE>& data, std::string dataFormat)
+{
+    Gdiplus::Bitmap bmp(*hbitmap, nullptr);
+    // write to istream
+    IStream* istream = nullptr;
+    CreateStreamOnHGlobal(NULL, TRUE, &istream);
+
+    // encoding
+    CLSID clsid;
+    if (dataFormat.compare("bmp") == 0) { CLSIDFromString(L"{557cf400-1a04-11d3-9a73-0000f81ef32e}", &clsid); }
+    else if (dataFormat.compare("jpg") == 0) { CLSIDFromString(L"{557cf401-1a04-11d3-9a73-0000f81ef32e}", &clsid); }
+    else if (dataFormat.compare("gif") == 0) { CLSIDFromString(L"{557cf402-1a04-11d3-9a73-0000f81ef32e}", &clsid); }
+    else if (dataFormat.compare("tif") == 0) { CLSIDFromString(L"{557cf405-1a04-11d3-9a73-0000f81ef32e}", &clsid); }
+    else if (dataFormat.compare("png") == 0) { CLSIDFromString(L"{557cf406-1a04-11d3-9a73-0000f81ef32e}", &clsid); }
+
+    Gdiplus::Status status = bmp.Save(istream, &clsid, NULL);
+    if (status != Gdiplus::Status::Ok)
+        return false;
+    
+    // memory handle associated with istream
+    HGLOBAL hg = NULL;
+    GetHGlobalFromStream(istream, &hg);
+    // copy istream to buffer
+    int bufsize = GlobalSize(hg);
+    data.resize(bufsize);
+    // lock/unlock memory
+    LPVOID pimage = GlobalLock(hg);
+    memcpy(&data[0], pimage, bufsize);
+    GlobalUnlock(hg);
+    istream->Release();
+    return true;
+}
+
+// screenshot
+std::string wrapper::screenshot(const std::string& path)
+{
+    std::string full_path = (std::filesystem::path(path) / std::filesystem::path((wrapper::get_date() + ".jpg"))).u8string();
+
+    // init GDI+
+    GdiplusStartupInput gdiplusStartupInput;
+    ULONG_PTR gdiplusToken;
+    GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+
+    // bitmap handle to bitmap screenshot
+    HWND hWnd = GetDesktopWindow();
+    HBITMAP hBmp = wrapper::GdiPlusScreenCapture(hWnd);
+    // save as jpg
+    std::vector<BYTE> data;
+    std::string dataFormat = "jpg";
+
+    if (wrapper::saveToMemory(&hBmp, data, dataFormat))
+    {
+        // save to file from memory
+        std::ofstream fout(full_path, std::ios::binary);
+        fout.write((char*)data.data(), data.size());
+    }
+    else
+        return "";
+    GdiplusShutdown(gdiplusToken);
+
+    return full_path;
+}
+
+// append content to file
+void wrapper::append_file(const std::string& file_path, const std::string& content)
+{
+    std::ofstream file(file_path, std::ios_base::app);
+    if (!file.is_open())
+        throw FileError("[!] failed to open file: " + file_path);
+
+    file << content;
+}
