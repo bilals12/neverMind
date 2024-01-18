@@ -2,7 +2,7 @@
 
 **educational purposes only!**
 
-read more on my blog!
+read more on my [blog](https://www.bsssq.xyz/posts/2024/01/nevermind/)!
 
 # compile (on windows)
 
